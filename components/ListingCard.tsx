@@ -22,28 +22,23 @@ export function ListingCard({ listing, isSaved, isViewed, onSave, onRemove, onVi
   const rootRef = useRef<HTMLDivElement>(null);
   const imageUrl = listing.thumbnailImages?.[0]?.imageUrl ?? listing.image?.imageUrl;
 
-  // Auto-mark as viewed once the card has dwelled in the viewport.
+  // Auto-mark as viewed only once the card has scrolled above the top of the
+  // viewport — i.e. the user has scrolled past it. Cards currently on screen
+  // (or still below the fold) are never marked.
   useEffect(() => {
     if (isViewed) return;
     const el = rootRef.current;
     if (!el) return;
-    let timer: ReturnType<typeof setTimeout> | undefined;
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
-          timer = setTimeout(() => onViewed(listing.itemId), 700);
-        } else if (timer) {
-          clearTimeout(timer);
-          timer = undefined;
+        if (!entry.isIntersecting && entry.boundingClientRect.top < 0) {
+          onViewed(listing.itemId);
         }
       },
-      { threshold: [0, 0.5] }
+      { threshold: 0 }
     );
     observer.observe(el);
-    return () => {
-      if (timer) clearTimeout(timer);
-      observer.disconnect();
-    };
+    return () => observer.disconnect();
   }, [isViewed, listing.itemId, onViewed]);
 
   const isAuction = listing.buyingOptions?.includes("AUCTION");
@@ -64,7 +59,7 @@ export function ListingCard({ listing, isSaved, isViewed, onSave, onRemove, onVi
     <div
       ref={rootRef}
       className={cn(
-        "group relative flex items-stretch gap-0 rounded-lg border overflow-hidden transition-all",
+        "group relative flex flex-col sm:flex-row items-stretch gap-0 rounded-lg border overflow-hidden transition-all",
         isSaved
           ? "border-green-400/70 bg-green-50"
           : "border-border bg-card hover:border-primary/40",
@@ -72,7 +67,7 @@ export function ListingCard({ listing, isSaved, isViewed, onSave, onRemove, onVi
       )}
     >
       {/* Left: image */}
-      <div className="relative w-[300px] h-[300px] shrink-0 bg-muted">
+      <div className="relative w-full aspect-square sm:aspect-auto sm:w-[300px] sm:h-[300px] shrink-0 bg-muted">
         {imageUrl && !imgError ? (
           <Image
             src={imageUrl}
@@ -96,7 +91,7 @@ export function ListingCard({ listing, isSaved, isViewed, onSave, onRemove, onVi
       </div>
 
       {/* Right: content */}
-      <div className="flex-1 min-w-0 flex flex-col justify-between p-5">
+      <div className="flex-1 min-w-0 flex flex-col justify-between p-4 sm:p-5">
         {/* Top section */}
         <div className="space-y-3">
           {/* Title */}
@@ -182,8 +177,8 @@ export function ListingCard({ listing, isSaved, isViewed, onSave, onRemove, onVi
       </div>
 
       {/* Far right: price + eBay link */}
-      <div className="flex flex-col items-end justify-between p-5 shrink-0 w-36">
-        <div className="text-right">
+      <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between gap-2 p-4 pt-0 sm:p-5 shrink-0 w-full sm:w-36 border-t border-border/60 sm:border-t-0">
+        <div className="text-left sm:text-right">
           {priceValue !== null ? (
             <>
               <p className="text-xl font-bold text-foreground">
@@ -206,7 +201,7 @@ export function ListingCard({ listing, isSaved, isViewed, onSave, onRemove, onVi
           href={listing.itemWebUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="p-1.5 rounded-md text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-muted transition-all"
+          className="p-1.5 rounded-md text-muted-foreground opacity-100 sm:opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-muted transition-all"
           aria-label="View on eBay"
         >
           <ExternalLink className="h-4 w-4" />

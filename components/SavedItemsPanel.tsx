@@ -96,9 +96,9 @@ function SavedItemRow({ item, onRemove, onUpdateNotes, rates }: RowProps) {
 
   return (
     <div className="rounded-lg border border-green-400/70 bg-green-50 overflow-hidden">
-      <div className="flex items-stretch gap-0">
+      <div className="flex flex-col sm:flex-row items-stretch gap-0">
         {/* Image */}
-        <div className="relative w-[300px] h-[300px] shrink-0 bg-muted">
+        <div className="relative w-full aspect-square sm:aspect-auto sm:w-[300px] sm:h-[300px] shrink-0 bg-muted">
           {imageUrl && !imgError ? (
             <Image
               src={imageUrl}
@@ -116,7 +116,7 @@ function SavedItemRow({ item, onRemove, onUpdateNotes, rates }: RowProps) {
         </div>
 
         {/* Content */}
-        <div className="flex-1 min-w-0 flex flex-col justify-between p-5">
+        <div className="flex-1 min-w-0 flex flex-col justify-between p-4 sm:p-5">
           <div className="space-y-3">
             <a
               href={listing.itemWebUrl}
@@ -190,8 +190,8 @@ function SavedItemRow({ item, onRemove, onUpdateNotes, rates }: RowProps) {
         </div>
 
         {/* Price + link */}
-        <div className="flex flex-col items-end justify-between p-5 shrink-0 w-36">
-          <div className="text-right">
+        <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between gap-2 p-4 pt-0 sm:p-5 shrink-0 w-full sm:w-36 border-t border-green-400/40 sm:border-t-0">
+          <div className="text-left sm:text-right">
             {priceValue !== null ? (
               <>
                 <p className="text-xl font-bold text-foreground">

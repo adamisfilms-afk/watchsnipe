@@ -556,9 +556,9 @@ export default function WatchSnipePage() {
               {loading && (
                 <div className="space-y-2">
                   {Array.from({ length: 8 }).map((_, i) => (
-                    <div key={i} className="flex items-stretch rounded-lg border border-border overflow-hidden">
-                      <Skeleton className="w-[300px] h-[300px] shrink-0 rounded-none" />
-                      <div className="flex-1 space-y-3">
+                    <div key={i} className="flex flex-col sm:flex-row items-stretch rounded-lg border border-border overflow-hidden">
+                      <Skeleton className="w-full aspect-square sm:aspect-auto sm:w-[300px] sm:h-[300px] shrink-0 rounded-none" />
+                      <div className="flex-1 space-y-3 p-4 sm:p-5">
                         <Skeleton className="h-4 w-3/4" />
                         <Skeleton className="h-3 w-1/2" />
                         <Skeleton className="h-3 w-1/3" />
