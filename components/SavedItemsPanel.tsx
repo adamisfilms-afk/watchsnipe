@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import {
   Heart, ExternalLink, Tag, MapPin, StickyNote, Clock, Calendar, Timer, GripVertical,
@@ -34,12 +34,16 @@ interface SavedItemsPanelProps {
   onReorder: (orderedIds: string[]) => void;
 }
 
+// rates: 1 USD = X foreign currency (from frankfurter.app)
+type Rates = Record<string, number>;
+
 interface RowProps {
   item: SavedItem;
   onRemove: (itemId: string) => void;
+  rates: Rates;
 }
 
-function SavedItemRow({ item, onRemove }: RowProps) {
+function SavedItemRow({ item, onRemove, rates }: RowProps) {
   const [imgError, setImgError] = useState(false);
   const [editingNotes, setEditingNotes] = useState(false);
   const [noteText, setNoteText] = useState(item.notes ?? "");
@@ -180,17 +184,24 @@ function SavedItemRow({ item, onRemove }: RowProps) {
         {/* Price + link */}
         <div className="flex flex-col items-end justify-between p-5 shrink-0 w-36">
           <div className="text-right">
-            {priceValue !== null ? (
-              <>
-                <p className="text-xl font-bold text-foreground">
-                  {currency === "USD" ? "$" : `${currency} `}
-                  {priceValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </p>
-                {currency !== "USD" && (
-                  <p className="text-xs text-muted-foreground mt-0.5">{currency}</p>
-                )}
-              </>
-            ) : (
+            {priceValue !== null ? (() => {
+              const rate = currency !== "USD" ? rates[currency] : null;
+              const usdValue = rate ? priceValue / rate : (currency === "USD" ? priceValue : null);
+              return (
+                <>
+                  <p className="text-xl font-bold text-foreground">
+                    ${usdValue !== null
+                      ? usdValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                      : "—"}
+                  </p>
+                  {currency !== "USD" && (
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {currency} {priceValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                  )}
+                </>
+              );
+            })() : (
               <p className="text-sm text-muted-foreground">—</p>
             )}
           </div>
@@ -237,7 +248,15 @@ function SavedItemRow({ item, onRemove }: RowProps) {
 }
 
 export function SavedItemsPanel({ items, onRemove, onReorder }: SavedItemsPanelProps) {
+  const [rates, setRates] = useState<Rates>({});
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+
+  useEffect(() => {
+    fetch("https://api.frankfurter.app/latest?from=USD")
+      .then((r) => r.json())
+      .then((data) => { if (data.rates) setRates(data.rates); })
+      .catch(() => {});
+  }, []);
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -266,7 +285,7 @@ export function SavedItemsPanel({ items, onRemove, onReorder }: SavedItemsPanelP
         <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
           <div className="space-y-3 pr-2">
             {items.map((item) => (
-              <SavedItemRow key={item.id} item={item} onRemove={onRemove} />
+              <SavedItemRow key={item.id} item={item} onRemove={onRemove} rates={rates} />
             ))}
           </div>
         </SortableContext>
