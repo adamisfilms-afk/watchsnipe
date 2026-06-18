@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   Search,
   Heart,
@@ -39,18 +39,12 @@ import { SavedItemsPanel } from "@/components/SavedItemsPanel";
 import { SavedSearchesPanel } from "@/components/SavedSearchesPanel";
 import { EbayListing, SearchFilters, SavedItem, SavedSearch, ALL_MARKETPLACES } from "@/lib/types";
 import {
-  getSavedItems,
-  saveItem,
-  removeSavedItem,
-  isItemSaved,
+  fetchAllData,
+  persistSavedItems,
+  persistSavedSearches,
+  persistViewedItems,
   getStoredFilters,
   storeFilters,
-  getSavedSearches,
-  saveSearch,
-  removeSavedSearch,
-  getViewedItems,
-  markViewed,
-  clearViewedItems,
 } from "@/lib/storage";
 
 const PAGE_SIZE = 150;
@@ -88,6 +82,14 @@ export default function WatchSnipePage() {
   const [saveSearchName, setSaveSearchName] = useState("");
   const abortRef = useRef<AbortController | null>(null);
   const mainRef = useRef<HTMLDivElement | null>(null);
+  // Mirror of viewedIds for stale-closure-free reads inside callbacks.
+  const viewedIdsRef = useRef<Set<string>>(viewedIds);
+  // Debounce timer for persisting viewed ids during scroll.
+  const viewedPersistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    viewedIdsRef.current = viewedIds;
+  }, [viewedIds]);
 
   useEffect(() => {
     const stored = getStoredFilters();
@@ -96,31 +98,44 @@ export default function WatchSnipePage() {
       setFilters(merged);
       setSearchTermsInput(merged.searchTerms);
     }
-    setSavedItems(getSavedItems());
-    setSavedSearches(getSavedSearches());
-    setViewedIds(getViewedItems());
-  }, []);
-
-  const handleMarkViewed = useCallback((itemId: string) => {
-    markViewed(itemId);
-    setViewedIds((prev) => {
-      if (prev.has(itemId)) return prev;
-      const next = new Set(prev);
-      next.add(itemId);
-      return next;
+    fetchAllData().then((data) => {
+      setSavedItems(data.savedItems);
+      setSavedSearches(data.savedSearches);
+      setViewedIds(new Set(data.viewedItems));
     });
   }, []);
 
+  const savedIds = useMemo(() => new Set(savedItems.map((i) => i.id)), [savedItems]);
+
+  // Viewed writes are debounced — auto-mark fires rapidly while scrolling.
+  const schedulePersistViewed = useCallback((ids: Set<string>) => {
+    if (viewedPersistTimer.current) clearTimeout(viewedPersistTimer.current);
+    viewedPersistTimer.current = setTimeout(() => persistViewedItems([...ids]), 1500);
+  }, []);
+
+  const handleMarkViewed = useCallback(
+    (itemId: string) => {
+      setViewedIds((prev) => {
+        if (prev.has(itemId)) return prev;
+        const next = new Set(prev);
+        next.add(itemId);
+        schedulePersistViewed(next);
+        return next;
+      });
+    },
+    [schedulePersistViewed]
+  );
+
   const handleClearViewed = () => {
-    clearViewedItems();
     setViewedIds(new Set());
     setViewedSnapshot(new Set());
+    persistViewedItems([]);
   };
 
   const handleToggleHideViewed = () => {
     setHideViewed((prev) => {
       const next = !prev;
-      if (next) setViewedSnapshot(getViewedItems());
+      if (next) setViewedSnapshot(new Set(viewedIdsRef.current));
       setPage(1);
       return next;
     });
@@ -224,7 +239,7 @@ export default function WatchSnipePage() {
       );
 
       setListings(filtered);
-      setViewedSnapshot(getViewedItems());
+      setViewedSnapshot(new Set(viewedIdsRef.current));
 
       if (firstError && filtered.length === 0) {
         setError(`${firstError}. Check your eBay API credentials in .env.local`);
@@ -253,15 +268,27 @@ export default function WatchSnipePage() {
   };
 
   const handleSaveItem = (listing: EbayListing) => {
-    saveItem(listing);
-    setSavedItems(getSavedItems());
+    if (savedItems.some((i) => i.id === listing.itemId)) return;
+    const next: SavedItem[] = [
+      { id: listing.itemId, listing, savedAt: new Date().toISOString() },
+      ...savedItems,
+    ];
+    setSavedItems(next);
+    persistSavedItems(next);
     toast.success("Saved to your watch list");
   };
 
   const handleRemoveItem = (itemId: string) => {
-    removeSavedItem(itemId);
-    setSavedItems(getSavedItems());
+    const next = savedItems.filter((i) => i.id !== itemId);
+    setSavedItems(next);
+    persistSavedItems(next);
     toast("Removed from saved items");
+  };
+
+  const handleUpdateNotes = (itemId: string, notes: string) => {
+    const next = savedItems.map((i) => (i.id === itemId ? { ...i, notes } : i));
+    setSavedItems(next);
+    persistSavedItems(next);
   };
 
 
@@ -275,8 +302,9 @@ export default function WatchSnipePage() {
   };
 
   const handleDeleteSearch = (id: string) => {
-    removeSavedSearch(id);
-    setSavedSearches(getSavedSearches());
+    const next = savedSearches.filter((s) => s.id !== id);
+    setSavedSearches(next);
+    persistSavedSearches(next);
     if (activeSearchId === id) setActiveSearchId(null);
     toast("Saved search deleted");
   };
@@ -285,8 +313,15 @@ export default function WatchSnipePage() {
     const name = saveSearchName.trim();
     if (!name) return;
     const current = { ...filters, searchTerms: searchTermsInput };
-    saveSearch(name, current);
-    setSavedSearches(getSavedSearches());
+    const newSearch: SavedSearch = {
+      id: Date.now().toString(),
+      name,
+      filters: current,
+      createdAt: new Date().toISOString(),
+    };
+    const next = [newSearch, ...savedSearches];
+    setSavedSearches(next);
+    persistSavedSearches(next);
     setSaveDialogOpen(false);
     setSaveSearchName("");
     toast.success(`Search "${name}" saved`);
@@ -418,7 +453,11 @@ export default function WatchSnipePage() {
                   Back to results
                 </Button>
               </div>
-              <SavedItemsPanel items={savedItems} onRemove={handleRemoveItem} />
+              <SavedItemsPanel
+                items={savedItems}
+                onRemove={handleRemoveItem}
+                onUpdateNotes={handleUpdateNotes}
+              />
             </div>
           ) : (
             <div>
@@ -562,7 +601,7 @@ export default function WatchSnipePage() {
                       <ListingCard
                         key={listing.itemId}
                         listing={listing}
-                        isSaved={isItemSaved(listing.itemId)}
+                        isSaved={savedIds.has(listing.itemId)}
                         isViewed={viewedIds.has(listing.itemId)}
                         onSave={handleSaveItem}
                         onRemove={handleRemoveItem}
@@ -578,7 +617,7 @@ export default function WatchSnipePage() {
                         variant="outline"
                         size="sm"
                         disabled={page === 1}
-                        onClick={() => { setViewedSnapshot(getViewedItems()); setPage((p) => p - 1); mainRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }}
+                        onClick={() => { setViewedSnapshot(new Set(viewedIds)); setPage((p) => p - 1); mainRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }}
                       >
                         <ChevronLeft className="h-4 w-4 mr-1" />
                         Previous
@@ -590,7 +629,7 @@ export default function WatchSnipePage() {
                         variant="outline"
                         size="sm"
                         disabled={page === totalPages}
-                        onClick={() => { setViewedSnapshot(getViewedItems()); setPage((p) => p + 1); mainRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }}
+                        onClick={() => { setViewedSnapshot(new Set(viewedIds)); setPage((p) => p + 1); mainRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }}
                       >
                         Next
                         <ChevronRight className="h-4 w-4 ml-1" />

@@ -9,7 +9,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { SavedItem } from "@/lib/types";
-import { updateItemNotes } from "@/lib/storage";
 import { relativeTime, relativeEnd } from "@/lib/relativeTime";
 import { cn } from "@/lib/utils";
 
@@ -57,15 +56,17 @@ function sortItems(items: SavedItem[], sort: SortOption, rates: Record<string, n
 interface SavedItemsPanelProps {
   items: SavedItem[];
   onRemove: (itemId: string) => void;
+  onUpdateNotes: (itemId: string, notes: string) => void;
 }
 
 interface RowProps {
   item: SavedItem;
   onRemove: (itemId: string) => void;
+  onUpdateNotes: (itemId: string, notes: string) => void;
   rates: Record<string, number> | null;
 }
 
-function SavedItemRow({ item, onRemove, rates }: RowProps) {
+function SavedItemRow({ item, onRemove, onUpdateNotes, rates }: RowProps) {
   const [imgError, setImgError] = useState(false);
   const [editingNotes, setEditingNotes] = useState(false);
   const [noteText, setNoteText] = useState(item.notes ?? "");
@@ -89,7 +90,7 @@ function SavedItemRow({ item, onRemove, rates }: RowProps) {
     : false;
 
   const saveNotes = () => {
-    updateItemNotes(item.id, noteText);
+    onUpdateNotes(item.id, noteText);
     setEditingNotes(false);
   };
 
@@ -250,7 +251,7 @@ function SavedItemRow({ item, onRemove, rates }: RowProps) {
   );
 }
 
-export function SavedItemsPanel({ items, onRemove }: SavedItemsPanelProps) {
+export function SavedItemsPanel({ items, onRemove, onUpdateNotes }: SavedItemsPanelProps) {
   const [sort, setSort] = useState<SortOption>("saved-desc");
   const [rates, setRates] = useState<Record<string, number> | null>(null);
 
@@ -297,7 +298,7 @@ export function SavedItemsPanel({ items, onRemove }: SavedItemsPanelProps) {
       <ScrollArea className="h-[calc(100vh-14rem)]">
         <div className="space-y-3 pr-2">
           {sorted.map((item) => (
-            <SavedItemRow key={item.id} item={item} onRemove={onRemove} rates={rates} />
+            <SavedItemRow key={item.id} item={item} onRemove={onRemove} onUpdateNotes={onUpdateNotes} rates={rates} />
           ))}
         </div>
       </ScrollArea>
