@@ -196,9 +196,7 @@ function SavedItemRow({ item, onRemove, rates }: RowProps) {
                 <p className="text-xl font-bold text-foreground">
                   {usdValue !== null
                     ? `$${usdValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                    : !ratesLoaded
-                      ? `${currency} ${priceValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                      : "—"}
+                    : `${currency} ${priceValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                 </p>
                 {currency !== "USD" && usdValue !== null && (
                   <p className="text-xs text-muted-foreground mt-0.5">
@@ -257,7 +255,7 @@ export function SavedItemsPanel({ items, onRemove }: SavedItemsPanelProps) {
   const [rates, setRates] = useState<Record<string, number> | null>(null);
 
   useEffect(() => {
-    fetch("https://api.frankfurter.app/latest?from=USD")
+    fetch("https://api.frankfurter.dev/v1/latest?base=USD")
       .then((r) => r.json())
       .then((data) => { if (data.rates) setRates(data.rates); })
       .catch(() => { setRates({}); });
