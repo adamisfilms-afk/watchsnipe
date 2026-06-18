@@ -24,13 +24,13 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: "ending-asc", label: "Ending Soonest" },
 ];
 
-function sortItems(items: SavedItem[], sort: SortOption, rates: Record<string, number>): SavedItem[] {
+function sortItems(items: SavedItem[], sort: SortOption, rates: Record<string, number> | null): SavedItem[] {
   const toUsd = (item: SavedItem) => {
     const v = item.listing.price?.value;
     if (!v) return 0;
     const amount = parseFloat(v);
     const currency = item.listing.price?.currency ?? "USD";
-    const rate = currency !== "USD" ? rates[currency] : null;
+    const rate = (rates && currency !== "USD") ? rates[currency] : undefined;
     return rate ? amount / rate : amount;
   };
 
@@ -62,7 +62,7 @@ interface SavedItemsPanelProps {
 interface RowProps {
   item: SavedItem;
   onRemove: (itemId: string) => void;
-  rates: Record<string, number>;
+  rates: Record<string, number> | null;
 }
 
 function SavedItemRow({ item, onRemove, rates }: RowProps) {
@@ -79,8 +79,11 @@ function SavedItemRow({ item, onRemove, rates }: RowProps) {
   const hasPrice = listing.price?.value !== undefined;
   const priceValue = hasPrice ? parseFloat(listing.price.value) : null;
   const currency = listing.price?.currency ?? "USD";
-  const rate = currency !== "USD" ? rates[currency] : null;
-  const usdValue = priceValue !== null ? (rate ? priceValue / rate : (currency === "USD" ? priceValue : null)) : null;
+  const ratesLoaded = rates !== null;
+  const rate = (ratesLoaded && currency !== "USD") ? rates![currency] : undefined;
+  const usdValue = priceValue !== null
+    ? (currency === "USD" ? priceValue : rate ? priceValue / rate : null)
+    : null;
   const endingSoon = listing.itemEndDate
     ? new Date(listing.itemEndDate).getTime() - Date.now() < 86_400_000
     : false;
@@ -188,12 +191,16 @@ function SavedItemRow({ item, onRemove, rates }: RowProps) {
         {/* Price + link */}
         <div className="flex flex-col items-end justify-between p-5 shrink-0 w-36">
           <div className="text-right">
-            {usdValue !== null ? (
+            {priceValue !== null ? (
               <>
                 <p className="text-xl font-bold text-foreground">
-                  ${usdValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {usdValue !== null
+                    ? `$${usdValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                    : !ratesLoaded
+                      ? `${currency} ${priceValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      : "—"}
                 </p>
-                {currency !== "USD" && priceValue !== null && (
+                {currency !== "USD" && usdValue !== null && (
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {currency} {priceValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
@@ -247,13 +254,13 @@ function SavedItemRow({ item, onRemove, rates }: RowProps) {
 
 export function SavedItemsPanel({ items, onRemove }: SavedItemsPanelProps) {
   const [sort, setSort] = useState<SortOption>("saved-desc");
-  const [rates, setRates] = useState<Record<string, number>>({});
+  const [rates, setRates] = useState<Record<string, number> | null>(null);
 
   useEffect(() => {
     fetch("https://api.frankfurter.app/latest?from=USD")
       .then((r) => r.json())
       .then((data) => { if (data.rates) setRates(data.rates); })
-      .catch(() => {});
+      .catch(() => { setRates({}); });
   }, []);
 
   if (items.length === 0) {
