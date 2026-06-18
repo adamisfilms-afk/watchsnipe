@@ -87,7 +87,7 @@ export function SavedSearchesPanel({
               </div>
             ) : (
               <button
-                className="shrink-0 p-1 rounded text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive hover:bg-destructive/10 transition-all"
+                className="shrink-0 p-1 rounded text-muted-foreground opacity-100 lg:opacity-0 group-hover:opacity-100 hover:text-destructive hover:bg-destructive/10 transition-all"
                 onClick={(e) => { e.stopPropagation(); setConfirmDelete(s.id); }}
                 aria-label="Delete saved search"
               >

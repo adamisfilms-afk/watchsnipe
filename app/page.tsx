@@ -10,6 +10,7 @@ import {
   AlertCircle,
   Loader2,
   BookmarkPlus,
+  Bookmark,
   ChevronLeft,
   ChevronRight,
   Eye,
@@ -30,6 +31,12 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -80,6 +87,8 @@ export default function WatchSnipePage() {
   // Save search dialog
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [saveSearchName, setSaveSearchName] = useState("");
+  // Mobile slide-out for saved searches (sidebar is hidden below lg).
+  const [searchesSheetOpen, setSearchesSheetOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const mainRef = useRef<HTMLDivElement | null>(null);
   // Mirror of viewedIds for stale-closure-free reads inside callbacks.
@@ -350,10 +359,15 @@ export default function WatchSnipePage() {
       {/* Header */}
       <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur">
         <div className="max-w-screen-2xl mx-auto px-4 py-3 flex items-center gap-3">
-          <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+            className="flex items-center gap-2 shrink-0 cursor-pointer"
+            aria-label="Scroll to top"
+          >
             <Watch className="h-5 w-5 text-primary" />
             <span className="font-bold text-lg tracking-tight">WatchSnipe</span>
-          </div>
+          </button>
 
           <Separator orientation="vertical" className="h-6" />
 
@@ -389,6 +403,22 @@ export default function WatchSnipePage() {
           >
             <BookmarkPlus className="h-4 w-4" />
             <span className="hidden md:inline">Save</span>
+          </Button>
+
+          {/* Saved searches (mobile — sidebar is hidden below lg) */}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-9 shrink-0 gap-1.5 lg:hidden"
+            onClick={() => setSearchesSheetOpen(true)}
+            title="Saved searches"
+          >
+            <Bookmark className="h-4 w-4" />
+            {savedSearches.length > 0 && (
+              <Badge variant="secondary" className="h-4 text-[10px] px-1">
+                {savedSearches.length}
+              </Badge>
+            )}
           </Button>
 
           {/* Saved items toggle */}
@@ -642,6 +672,33 @@ export default function WatchSnipePage() {
           )}
         </main>
       </div>
+
+      {/* Saved Searches sheet (mobile) */}
+      <Sheet open={searchesSheetOpen} onOpenChange={setSearchesSheetOpen}>
+        <SheetContent side="left" className="w-80 max-w-[85vw] gap-0">
+          <SheetHeader>
+            <SheetTitle>Saved Searches</SheetTitle>
+          </SheetHeader>
+          <div className="flex flex-col gap-3 overflow-y-auto px-4 pb-4">
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full h-9 gap-1.5"
+              onClick={() => { setSearchesSheetOpen(false); setSaveSearchName(""); setSaveDialogOpen(true); }}
+            >
+              <BookmarkPlus className="h-4 w-4" />
+              Save current search
+            </Button>
+            <Separator />
+            <SavedSearchesPanel
+              searches={savedSearches}
+              activeSearchId={activeSearchId}
+              onLoad={(s) => { setSearchesSheetOpen(false); handleLoadSearch(s); }}
+              onDelete={handleDeleteSearch}
+            />
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* Save Search Dialog */}
       <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
