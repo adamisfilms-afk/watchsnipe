@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { Heart, ExternalLink, Trash2, Tag, MapPin, StickyNote, Clock, Calendar, Timer } from "lucide-react";
+import {
+  Heart, ExternalLink, Tag, MapPin, StickyNote, Clock, Calendar, Timer, GripVertical,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -10,10 +12,26 @@ import { SavedItem } from "@/lib/types";
 import { updateItemNotes } from "@/lib/storage";
 import { relativeTime, relativeEnd } from "@/lib/relativeTime";
 import { cn } from "@/lib/utils";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 interface SavedItemsPanelProps {
   items: SavedItem[];
   onRemove: (itemId: string) => void;
+  onReorder: (orderedIds: string[]) => void;
 }
 
 interface RowProps {
@@ -26,9 +44,11 @@ function SavedItemRow({ item, onRemove }: RowProps) {
   const [editingNotes, setEditingNotes] = useState(false);
   const [noteText, setNoteText] = useState(item.notes ?? "");
 
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: item.id });
+
   const listing = item.listing;
   const imageUrl = listing.thumbnailImages?.[0]?.imageUrl ?? listing.image?.imageUrl;
-
   const isAuction = listing.buyingOptions?.includes("AUCTION");
   const hasBuyNow = listing.buyingOptions?.includes("FIXED_PRICE");
   const city = listing.itemLocation?.city;
@@ -46,8 +66,25 @@ function SavedItemRow({ item, onRemove }: RowProps) {
   };
 
   return (
-    <div className="rounded-lg border border-green-400/70 bg-green-50 overflow-hidden">
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={cn(
+        "rounded-lg border border-green-400/70 bg-green-50 overflow-hidden",
+        isDragging && "opacity-50 shadow-lg"
+      )}
+    >
       <div className="flex items-stretch gap-0">
+        {/* Drag handle */}
+        <div
+          {...attributes}
+          {...listeners}
+          className="flex items-center px-2 cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground/70 bg-green-100/50 border-r border-green-200 transition-colors"
+          title="Drag to reorder"
+        >
+          <GripVertical className="h-5 w-5" />
+        </div>
+
         {/* Image */}
         <div className="relative w-[300px] h-[300px] shrink-0 bg-muted">
           {imageUrl && !imgError ? (
@@ -122,7 +159,6 @@ function SavedItemRow({ item, onRemove }: RowProps) {
             </div>
           </div>
 
-          {/* Bottom actions */}
           <div className="mt-4 flex items-center gap-2">
             <button
               onClick={() => onRemove(listing.itemId)}
@@ -170,7 +206,6 @@ function SavedItemRow({ item, onRemove }: RowProps) {
         </div>
       </div>
 
-      {/* Notes section */}
       {editingNotes ? (
         <div className="px-5 pb-4 space-y-1.5">
           <textarea
@@ -201,7 +236,18 @@ function SavedItemRow({ item, onRemove }: RowProps) {
   );
 }
 
-export function SavedItemsPanel({ items, onRemove }: SavedItemsPanelProps) {
+export function SavedItemsPanel({ items, onRemove, onReorder }: SavedItemsPanelProps) {
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = items.findIndex((i) => i.id === active.id);
+    const newIndex = items.findIndex((i) => i.id === over.id);
+    const reordered = arrayMove(items, oldIndex, newIndex);
+    onReorder(reordered.map((i) => i.id));
+  };
+
   if (items.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -216,11 +262,15 @@ export function SavedItemsPanel({ items, onRemove }: SavedItemsPanelProps) {
 
   return (
     <ScrollArea className="h-[calc(100vh-12rem)]">
-      <div className="space-y-3 pr-2">
-        {items.map((item) => (
-          <SavedItemRow key={item.id} item={item} onRemove={onRemove} />
-        ))}
-      </div>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
+          <div className="space-y-3 pr-2">
+            {items.map((item) => (
+              <SavedItemRow key={item.id} item={item} onRemove={onRemove} />
+            ))}
+          </div>
+        </SortableContext>
+      </DndContext>
     </ScrollArea>
   );
 }

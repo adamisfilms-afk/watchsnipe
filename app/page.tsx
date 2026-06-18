@@ -39,6 +39,7 @@ import {
   getSavedItems,
   saveItem,
   removeSavedItem,
+  reorderSavedItems,
   isItemSaved,
   getStoredFilters,
   storeFilters,
@@ -225,6 +226,11 @@ export default function WatchSnipePage() {
     toast("Removed from saved items");
   };
 
+  const handleReorderItems = (orderedIds: string[]) => {
+    reorderSavedItems(orderedIds);
+    setSavedItems(getSavedItems());
+  };
+
   const handleLoadSearch = (s: SavedSearch) => {
     setFilters(s.filters);
     setSearchTermsInput(s.filters.searchTerms);
@@ -374,7 +380,7 @@ export default function WatchSnipePage() {
                   Back to results
                 </Button>
               </div>
-              <SavedItemsPanel items={savedItems} onRemove={handleRemoveItem} />
+              <SavedItemsPanel items={savedItems} onRemove={handleRemoveItem} onReorder={handleReorderItems} />
             </div>
           ) : (
             <div>
