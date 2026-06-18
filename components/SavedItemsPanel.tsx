@@ -2,54 +2,73 @@
 
 import { useState, useEffect } from "react";
 import Image from "next/image";
-import {
-  Heart, ExternalLink, Tag, MapPin, StickyNote, Clock, Calendar, Timer, GripVertical,
-} from "lucide-react";
+import { Heart, ExternalLink, Tag, MapPin, StickyNote, Clock, Calendar, Timer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import { SavedItem } from "@/lib/types";
 import { updateItemNotes } from "@/lib/storage";
 import { relativeTime, relativeEnd } from "@/lib/relativeTime";
 import { cn } from "@/lib/utils";
-import {
-  DndContext,
-  closestCenter,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent,
-} from "@dnd-kit/core";
-import {
-  SortableContext,
-  verticalListSortingStrategy,
-  useSortable,
-  arrayMove,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
+
+type SortOption = "saved-desc" | "saved-asc" | "price-asc" | "price-desc" | "listed-desc" | "ending-asc";
+
+const SORT_OPTIONS: { value: SortOption; label: string }[] = [
+  { value: "saved-desc", label: "Recently Saved" },
+  { value: "saved-asc", label: "Oldest Saved" },
+  { value: "price-asc", label: "Price: Low to High" },
+  { value: "price-desc", label: "Price: High to Low" },
+  { value: "listed-desc", label: "Most Recently Listed" },
+  { value: "ending-asc", label: "Ending Soonest" },
+];
+
+function sortItems(items: SavedItem[], sort: SortOption, rates: Record<string, number>): SavedItem[] {
+  const toUsd = (item: SavedItem) => {
+    const v = item.listing.price?.value;
+    if (!v) return 0;
+    const amount = parseFloat(v);
+    const currency = item.listing.price?.currency ?? "USD";
+    const rate = currency !== "USD" ? rates[currency] : null;
+    return rate ? amount / rate : amount;
+  };
+
+  return [...items].sort((a, b) => {
+    switch (sort) {
+      case "saved-desc": return new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime();
+      case "saved-asc":  return new Date(a.savedAt).getTime() - new Date(b.savedAt).getTime();
+      case "price-asc":  return toUsd(a) - toUsd(b);
+      case "price-desc": return toUsd(b) - toUsd(a);
+      case "listed-desc": {
+        const da = a.listing.itemCreationDate ? new Date(a.listing.itemCreationDate).getTime() : 0;
+        const db = b.listing.itemCreationDate ? new Date(b.listing.itemCreationDate).getTime() : 0;
+        return db - da;
+      }
+      case "ending-asc": {
+        const ea = a.listing.itemEndDate ? new Date(a.listing.itemEndDate).getTime() : Infinity;
+        const eb = b.listing.itemEndDate ? new Date(b.listing.itemEndDate).getTime() : Infinity;
+        return ea - eb;
+      }
+    }
+  });
+}
 
 interface SavedItemsPanelProps {
   items: SavedItem[];
   onRemove: (itemId: string) => void;
-  onReorder: (orderedIds: string[]) => void;
 }
-
-// rates: 1 USD = X foreign currency (from frankfurter.app)
-type Rates = Record<string, number>;
 
 interface RowProps {
   item: SavedItem;
   onRemove: (itemId: string) => void;
-  rates: Rates;
+  rates: Record<string, number>;
 }
 
 function SavedItemRow({ item, onRemove, rates }: RowProps) {
   const [imgError, setImgError] = useState(false);
   const [editingNotes, setEditingNotes] = useState(false);
   const [noteText, setNoteText] = useState(item.notes ?? "");
-
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: item.id });
 
   const listing = item.listing;
   const imageUrl = listing.thumbnailImages?.[0]?.imageUrl ?? listing.image?.imageUrl;
@@ -60,6 +79,8 @@ function SavedItemRow({ item, onRemove, rates }: RowProps) {
   const hasPrice = listing.price?.value !== undefined;
   const priceValue = hasPrice ? parseFloat(listing.price.value) : null;
   const currency = listing.price?.currency ?? "USD";
+  const rate = currency !== "USD" ? rates[currency] : null;
+  const usdValue = priceValue !== null ? (rate ? priceValue / rate : (currency === "USD" ? priceValue : null)) : null;
   const endingSoon = listing.itemEndDate
     ? new Date(listing.itemEndDate).getTime() - Date.now() < 86_400_000
     : false;
@@ -70,25 +91,8 @@ function SavedItemRow({ item, onRemove, rates }: RowProps) {
   };
 
   return (
-    <div
-      ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={cn(
-        "rounded-lg border border-green-400/70 bg-green-50 overflow-hidden",
-        isDragging && "opacity-50 shadow-lg"
-      )}
-    >
+    <div className="rounded-lg border border-green-400/70 bg-green-50 overflow-hidden">
       <div className="flex items-stretch gap-0">
-        {/* Drag handle */}
-        <div
-          {...attributes}
-          {...listeners}
-          className="flex items-center px-2 cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground/70 bg-green-100/50 border-r border-green-200 transition-colors"
-          title="Drag to reorder"
-        >
-          <GripVertical className="h-5 w-5" />
-        </div>
-
         {/* Image */}
         <div className="relative w-[300px] h-[300px] shrink-0 bg-muted">
           {imageUrl && !imgError ? (
@@ -184,24 +188,18 @@ function SavedItemRow({ item, onRemove, rates }: RowProps) {
         {/* Price + link */}
         <div className="flex flex-col items-end justify-between p-5 shrink-0 w-36">
           <div className="text-right">
-            {priceValue !== null ? (() => {
-              const rate = currency !== "USD" ? rates[currency] : null;
-              const usdValue = rate ? priceValue / rate : (currency === "USD" ? priceValue : null);
-              return (
-                <>
-                  <p className="text-xl font-bold text-foreground">
-                    ${usdValue !== null
-                      ? usdValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                      : "—"}
+            {usdValue !== null ? (
+              <>
+                <p className="text-xl font-bold text-foreground">
+                  ${usdValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+                {currency !== "USD" && priceValue !== null && (
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {currency} {priceValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
-                  {currency !== "USD" && (
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {currency} {priceValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </p>
-                  )}
-                </>
-              );
-            })() : (
+                )}
+              </>
+            ) : (
               <p className="text-sm text-muted-foreground">—</p>
             )}
           </div>
@@ -247,9 +245,9 @@ function SavedItemRow({ item, onRemove, rates }: RowProps) {
   );
 }
 
-export function SavedItemsPanel({ items, onRemove, onReorder }: SavedItemsPanelProps) {
-  const [rates, setRates] = useState<Rates>({});
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+export function SavedItemsPanel({ items, onRemove }: SavedItemsPanelProps) {
+  const [sort, setSort] = useState<SortOption>("saved-desc");
+  const [rates, setRates] = useState<Record<string, number>>({});
 
   useEffect(() => {
     fetch("https://api.frankfurter.app/latest?from=USD")
@@ -257,15 +255,6 @@ export function SavedItemsPanel({ items, onRemove, onReorder }: SavedItemsPanelP
       .then((data) => { if (data.rates) setRates(data.rates); })
       .catch(() => {});
   }, []);
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const oldIndex = items.findIndex((i) => i.id === active.id);
-    const newIndex = items.findIndex((i) => i.id === over.id);
-    const reordered = arrayMove(items, oldIndex, newIndex);
-    onReorder(reordered.map((i) => i.id));
-  };
 
   if (items.length === 0) {
     return (
@@ -279,17 +268,34 @@ export function SavedItemsPanel({ items, onRemove, onReorder }: SavedItemsPanelP
     );
   }
 
+  const sorted = sortItems(items, sort, rates);
+
   return (
-    <ScrollArea className="h-[calc(100vh-12rem)]">
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
-          <div className="space-y-3 pr-2">
-            {items.map((item) => (
-              <SavedItemRow key={item.id} item={item} onRemove={onRemove} rates={rates} />
+    <div className="flex flex-col gap-3">
+      {/* Sort control */}
+      <div className="flex items-center gap-2">
+        <Label className="text-xs text-muted-foreground shrink-0">Sort by</Label>
+        <Select value={sort} onValueChange={(v) => v && setSort(v as SortOption)}>
+          <SelectTrigger className="h-8 text-xs flex-1">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SORT_OPTIONS.map((o) => (
+              <SelectItem key={o.value} value={o.value} className="text-xs">
+                {o.label}
+              </SelectItem>
             ))}
-          </div>
-        </SortableContext>
-      </DndContext>
-    </ScrollArea>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <ScrollArea className="h-[calc(100vh-14rem)]">
+        <div className="space-y-3 pr-2">
+          {sorted.map((item) => (
+            <SavedItemRow key={item.id} item={item} onRemove={onRemove} rates={rates} />
+          ))}
+        </div>
+      </ScrollArea>
+    </div>
   );
 }

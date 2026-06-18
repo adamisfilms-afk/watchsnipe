@@ -27,13 +27,6 @@ export function saveItem(listing: EbayListing): SavedItem {
   return newItem;
 }
 
-export function reorderSavedItems(orderedIds: string[]): void {
-  const items = getSavedItems();
-  const map = new Map(items.map((i) => [i.id, i]));
-  const reordered = orderedIds.map((id) => map.get(id)).filter(Boolean) as typeof items;
-  localStorage.setItem(SAVED_ITEMS_KEY, JSON.stringify(reordered));
-}
-
 export function removeSavedItem(itemId: string): void {
   const items = getSavedItems().filter((i) => i.id !== itemId);
   localStorage.setItem(SAVED_ITEMS_KEY, JSON.stringify(items));
