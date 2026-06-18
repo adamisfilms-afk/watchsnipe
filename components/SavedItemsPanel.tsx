@@ -2,33 +2,206 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { Heart, ExternalLink, Trash2, Tag, MapPin, StickyNote } from "lucide-react";
+import { Heart, ExternalLink, Trash2, Tag, MapPin, StickyNote, Clock, Calendar, Timer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { SavedItem } from "@/lib/types";
 import { updateItemNotes } from "@/lib/storage";
+import { relativeTime, relativeEnd } from "@/lib/relativeTime";
+import { cn } from "@/lib/utils";
 
 interface SavedItemsPanelProps {
   items: SavedItem[];
   onRemove: (itemId: string) => void;
 }
 
+interface RowProps {
+  item: SavedItem;
+  onRemove: (itemId: string) => void;
+}
+
+function SavedItemRow({ item, onRemove }: RowProps) {
+  const [imgError, setImgError] = useState(false);
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [noteText, setNoteText] = useState(item.notes ?? "");
+
+  const listing = item.listing;
+  const imageUrl = listing.thumbnailImages?.[0]?.imageUrl ?? listing.image?.imageUrl;
+
+  const isAuction = listing.buyingOptions?.includes("AUCTION");
+  const hasBuyNow = listing.buyingOptions?.includes("FIXED_PRICE");
+  const city = listing.itemLocation?.city;
+  const country = listing.itemLocation?.country;
+  const hasPrice = listing.price?.value !== undefined;
+  const priceValue = hasPrice ? parseFloat(listing.price.value) : null;
+  const currency = listing.price?.currency ?? "USD";
+  const endingSoon = listing.itemEndDate
+    ? new Date(listing.itemEndDate).getTime() - Date.now() < 86_400_000
+    : false;
+
+  const saveNotes = () => {
+    updateItemNotes(item.id, noteText);
+    setEditingNotes(false);
+  };
+
+  return (
+    <div className="rounded-lg border border-green-400/70 bg-green-50 overflow-hidden">
+      <div className="flex items-stretch gap-0">
+        {/* Image */}
+        <div className="relative w-[300px] h-[300px] shrink-0 bg-muted">
+          {imageUrl && !imgError ? (
+            <Image
+              src={imageUrl}
+              alt={listing.title}
+              fill
+              className="object-contain p-3"
+              onError={() => setImgError(true)}
+              sizes="300px"
+            />
+          ) : (
+            <div className="flex items-center justify-center h-full">
+              <Tag className="h-12 w-12 text-muted-foreground/20" />
+            </div>
+          )}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0 flex flex-col justify-between p-5">
+          <div className="space-y-3">
+            <a
+              href={listing.itemWebUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block text-base font-semibold leading-snug line-clamp-3 hover:underline hover:text-primary transition-colors"
+            >
+              {listing.title}
+            </a>
+
+            <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+              {isAuction && (
+                <Badge variant="outline" className="text-xs py-0 h-5 gap-0.5">
+                  <Clock className="h-3 w-3" />
+                  Auction
+                </Badge>
+              )}
+              {hasBuyNow && !isAuction && (
+                <Badge variant="secondary" className="text-xs py-0 h-5">
+                  Buy Now
+                </Badge>
+              )}
+              {listing.itemCreationDate && (
+                <span className="flex items-center gap-1 text-xs">
+                  <Calendar className="h-3 w-3 shrink-0" />
+                  Listed {relativeTime(listing.itemCreationDate)}
+                </span>
+              )}
+              {listing.itemEndDate && (
+                <span className={cn("flex items-center gap-1 text-xs", endingSoon && "text-orange-500 font-medium")}>
+                  <Timer className="h-3 w-3 shrink-0" />
+                  {relativeEnd(listing.itemEndDate)}
+                </span>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+              {(city || country) && (
+                <span className="flex items-center gap-1">
+                  <MapPin className="h-3.5 w-3.5 shrink-0" />
+                  {city ? `${city}, ${country}` : country}
+                </span>
+              )}
+              {listing.seller?.username && (
+                <span className="flex items-center gap-1">
+                  <span className="font-medium text-foreground/70">{listing.seller.username}</span>
+                  {listing.seller.feedbackPercentage && (
+                    <span className="text-green-600">({listing.seller.feedbackPercentage}%)</span>
+                  )}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Bottom actions */}
+          <div className="mt-4 flex items-center gap-2">
+            <button
+              onClick={() => onRemove(listing.itemId)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-green-400 bg-green-100 text-green-700 hover:bg-red-50 hover:border-red-400 hover:text-red-600 transition-all"
+            >
+              <Heart className="h-3.5 w-3.5 fill-current" />
+              Saved
+            </button>
+            <button
+              onClick={() => setEditingNotes(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-border bg-background text-muted-foreground hover:bg-muted transition-all"
+            >
+              <StickyNote className="h-3.5 w-3.5" />
+              Notes
+            </button>
+          </div>
+        </div>
+
+        {/* Price + link */}
+        <div className="flex flex-col items-end justify-between p-5 shrink-0 w-36">
+          <div className="text-right">
+            {priceValue !== null ? (
+              <>
+                <p className="text-xl font-bold text-foreground">
+                  {currency === "USD" ? "$" : `${currency} `}
+                  {priceValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+                {currency !== "USD" && (
+                  <p className="text-xs text-muted-foreground mt-0.5">{currency}</p>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">—</p>
+            )}
+          </div>
+          <a
+            href={listing.itemWebUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-all"
+            aria-label="View on eBay"
+          >
+            <ExternalLink className="h-4 w-4" />
+          </a>
+        </div>
+      </div>
+
+      {/* Notes section */}
+      {editingNotes ? (
+        <div className="px-5 pb-4 space-y-1.5">
+          <textarea
+            className="w-full text-xs rounded border border-border bg-background p-2 resize-none h-16 focus:outline-none focus:ring-1 focus:ring-ring"
+            value={noteText}
+            onChange={(e) => setNoteText(e.target.value)}
+            placeholder="Add notes…"
+            autoFocus
+          />
+          <div className="flex gap-1.5">
+            <Button size="sm" className="h-6 text-xs flex-1" onClick={saveNotes}>
+              Save
+            </Button>
+            <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => setEditingNotes(false)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : item.notes ? (
+        <div
+          className="px-5 pb-4 pt-0 text-xs text-muted-foreground bg-muted/30 cursor-pointer hover:bg-muted/50 py-2"
+          onClick={() => setEditingNotes(true)}
+        >
+          {item.notes}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function SavedItemsPanel({ items, onRemove }: SavedItemsPanelProps) {
-  const [editingNotes, setEditingNotes] = useState<string | null>(null);
-  const [noteText, setNoteText] = useState("");
-
-  const startEditNotes = (item: SavedItem) => {
-    setEditingNotes(item.id);
-    setNoteText(item.notes ?? "");
-  };
-
-  const saveNotes = (itemId: string) => {
-    updateItemNotes(itemId, noteText);
-    setEditingNotes(null);
-  };
-
   if (items.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -44,133 +217,9 @@ export function SavedItemsPanel({ items, onRemove }: SavedItemsPanelProps) {
   return (
     <ScrollArea className="h-[calc(100vh-12rem)]">
       <div className="space-y-3 pr-2">
-        {items.map((item) => {
-          const imageUrl =
-            item.listing.thumbnailImages?.[0]?.imageUrl ?? item.listing.image?.imageUrl;
-          const savedDate = new Date(item.savedAt).toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-          });
-
-          return (
-            <div
-              key={item.id}
-              className="rounded-lg border border-border bg-card p-3 space-y-2"
-            >
-              <div className="flex gap-3">
-                {/* Thumbnail */}
-                <div className="relative w-16 h-16 rounded bg-muted shrink-0 overflow-hidden">
-                  {imageUrl ? (
-                    <Image
-                      src={imageUrl}
-                      alt={item.listing.title}
-                      fill
-                      className="object-contain p-1"
-                      sizes="64px"
-                    />
-                  ) : (
-                    <div className="flex items-center justify-center h-full">
-                      <Tag className="h-5 w-5 text-muted-foreground/30" />
-                    </div>
-                  )}
-                </div>
-
-                {/* Details */}
-                <div className="flex-1 min-w-0 space-y-1">
-                  <p className="text-xs font-medium line-clamp-2 leading-tight">
-                    {item.listing.title}
-                  </p>
-                  <p className="text-sm font-bold text-primary">
-                    {item.listing.price.currency === "USD" ? "$" : item.listing.price.currency + " "}
-                    {parseFloat(item.listing.price.value).toLocaleString("en-US", {
-                      minimumFractionDigits: 2,
-                    })}
-                  </p>
-                  {item.listing.itemLocation?.country && (
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <MapPin className="h-3 w-3" />
-                      {item.listing.itemLocation.country}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Saved date */}
-              <p className="text-xs text-muted-foreground">Saved {savedDate}</p>
-
-              {/* Notes */}
-              {editingNotes === item.id ? (
-                <div className="space-y-1.5">
-                  <textarea
-                    className="w-full text-xs rounded border border-border bg-background p-2 resize-none h-16 focus:outline-none focus:ring-1 focus:ring-ring"
-                    value={noteText}
-                    onChange={(e) => setNoteText(e.target.value)}
-                    placeholder="Add notes…"
-                    autoFocus
-                  />
-                  <div className="flex gap-1.5">
-                    <Button
-                      size="sm"
-                      className="h-6 text-xs flex-1"
-                      onClick={() => saveNotes(item.id)}
-                    >
-                      Save
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 text-xs"
-                      onClick={() => setEditingNotes(null)}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              ) : item.notes ? (
-                <div
-                  className="text-xs text-muted-foreground bg-muted/50 rounded p-2 cursor-pointer hover:bg-muted"
-                  onClick={() => startEditNotes(item)}
-                >
-                  {item.notes}
-                </div>
-              ) : null}
-
-              {/* Actions */}
-              <div className="flex gap-1.5">
-                <a
-                  href={item.listing.itemWebUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 inline-flex items-center justify-center h-7 text-xs rounded-lg border border-border bg-background hover:bg-muted transition-colors px-2.5 font-medium"
-                >
-                  <ExternalLink className="h-3 w-3 mr-1" />
-                  View
-                </a>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs px-2"
-                  onClick={() => startEditNotes(item)}
-                  title="Add notes"
-                >
-                  <StickyNote className="h-3 w-3" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs px-2 text-destructive hover:text-destructive"
-                  onClick={() => onRemove(item.id)}
-                  title="Remove"
-                >
-                  <Trash2 className="h-3 w-3" />
-                </Button>
-              </div>
-
-              <Separator />
-            </div>
-          );
-        })}
+        {items.map((item) => (
+          <SavedItemRow key={item.id} item={item} onRemove={onRemove} />
+        ))}
       </div>
     </ScrollArea>
   );
