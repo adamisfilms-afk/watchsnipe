@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
-import { Heart, ExternalLink, MapPin, Tag, Clock, Calendar, Timer } from "lucide-react";
+import { Heart, ExternalLink, MapPin, Tag, Clock, Calendar, Timer, Eye } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { EbayListing } from "@/lib/types";
 import { relativeTime, relativeEnd } from "@/lib/relativeTime";
@@ -11,13 +11,40 @@ import { cn } from "@/lib/utils";
 interface ListingCardProps {
   listing: EbayListing;
   isSaved: boolean;
+  isViewed: boolean;
   onSave: (listing: EbayListing) => void;
   onRemove: (itemId: string) => void;
+  onViewed: (itemId: string) => void;
 }
 
-export function ListingCard({ listing, isSaved, onSave, onRemove }: ListingCardProps) {
+export function ListingCard({ listing, isSaved, isViewed, onSave, onRemove, onViewed }: ListingCardProps) {
   const [imgError, setImgError] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
   const imageUrl = listing.thumbnailImages?.[0]?.imageUrl ?? listing.image?.imageUrl;
+
+  // Auto-mark as viewed once the card has dwelled in the viewport.
+  useEffect(() => {
+    if (isViewed) return;
+    const el = rootRef.current;
+    if (!el) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
+          timer = setTimeout(() => onViewed(listing.itemId), 700);
+        } else if (timer) {
+          clearTimeout(timer);
+          timer = undefined;
+        }
+      },
+      { threshold: [0, 0.5] }
+    );
+    observer.observe(el);
+    return () => {
+      if (timer) clearTimeout(timer);
+      observer.disconnect();
+    };
+  }, [isViewed, listing.itemId, onViewed]);
 
   const isAuction = listing.buyingOptions?.includes("AUCTION");
   const hasBuyNow = listing.buyingOptions?.includes("FIXED_PRICE");
@@ -35,11 +62,13 @@ export function ListingCard({ listing, isSaved, onSave, onRemove }: ListingCardP
 
   return (
     <div
+      ref={rootRef}
       className={cn(
-        "group flex items-stretch gap-0 rounded-lg border overflow-hidden transition-colors",
+        "group relative flex items-stretch gap-0 rounded-lg border overflow-hidden transition-all",
         isSaved
           ? "border-green-400/70 bg-green-50"
-          : "border-border bg-card hover:border-primary/40"
+          : "border-border bg-card hover:border-primary/40",
+        isViewed && !isSaved && "opacity-55 hover:opacity-100"
       )}
     >
       {/* Left: image */}
@@ -49,13 +78,19 @@ export function ListingCard({ listing, isSaved, onSave, onRemove }: ListingCardP
             src={imageUrl}
             alt={listing.title}
             fill
-            className="object-contain p-3"
+            className={cn("object-contain p-3", isViewed && !isSaved && "grayscale")}
             onError={() => setImgError(true)}
             sizes="300px"
           />
         ) : (
           <div className="flex items-center justify-center h-full">
             <Tag className="h-12 w-12 text-muted-foreground/20" />
+          </div>
+        )}
+        {isViewed && (
+          <div className="absolute top-2 left-2 inline-flex items-center gap-1 rounded-full bg-black/70 text-white text-[10px] font-medium px-2 py-0.5">
+            <Eye className="h-3 w-3" />
+            Viewed
           </div>
         )}
       </div>

@@ -12,6 +12,8 @@ import {
   BookmarkPlus,
   ChevronLeft,
   ChevronRight,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +32,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { ListingCard } from "@/components/ListingCard";
 import { FilterPanel } from "@/components/FilterPanel";
 import { SavedItemsPanel } from "@/components/SavedItemsPanel";
@@ -45,6 +48,9 @@ import {
   getSavedSearches,
   saveSearch,
   removeSavedSearch,
+  getViewedItems,
+  markViewed,
+  clearViewedItems,
 } from "@/lib/storage";
 
 const PAGE_SIZE = 150;
@@ -71,6 +77,12 @@ export default function WatchSnipePage() {
   const [searchTermsInput, setSearchTermsInput] = useState(DEFAULT_FILTERS.searchTerms);
   const [hasSearched, setHasSearched] = useState(false);
   const [page, setPage] = useState(1);
+  // Viewed tracking
+  const [viewedIds, setViewedIds] = useState<Set<string>>(new Set());
+  const [hideViewed, setHideViewed] = useState(false);
+  // Frozen set used for *hiding* viewed items, so cards don't vanish mid-scroll.
+  // Refreshed on search, page change, and when the hide toggle is switched on.
+  const [viewedSnapshot, setViewedSnapshot] = useState<Set<string>>(new Set());
   // Save search dialog
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [saveSearchName, setSaveSearchName] = useState("");
@@ -86,7 +98,33 @@ export default function WatchSnipePage() {
     }
     setSavedItems(getSavedItems());
     setSavedSearches(getSavedSearches());
+    setViewedIds(getViewedItems());
   }, []);
+
+  const handleMarkViewed = useCallback((itemId: string) => {
+    markViewed(itemId);
+    setViewedIds((prev) => {
+      if (prev.has(itemId)) return prev;
+      const next = new Set(prev);
+      next.add(itemId);
+      return next;
+    });
+  }, []);
+
+  const handleClearViewed = () => {
+    clearViewedItems();
+    setViewedIds(new Set());
+    setViewedSnapshot(new Set());
+  };
+
+  const handleToggleHideViewed = () => {
+    setHideViewed((prev) => {
+      const next = !prev;
+      if (next) setViewedSnapshot(getViewedItems());
+      setPage(1);
+      return next;
+    });
+  };
 
   const search = useCallback(async (currentFilters: SearchFilters) => {
     const terms = currentFilters.searchTerms
@@ -186,6 +224,7 @@ export default function WatchSnipePage() {
       );
 
       setListings(filtered);
+      setViewedSnapshot(getViewedItems());
 
       if (firstError && filtered.length === 0) {
         setError(`${firstError}. Check your eBay API credentials in .env.local`);
@@ -261,9 +300,13 @@ export default function WatchSnipePage() {
     filters.excludedCountries.length > 0,
   ].filter(Boolean).length;
 
-  // Pagination
-  const totalPages = Math.ceil(listings.length / PAGE_SIZE);
-  const pagedListings = listings.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  // Viewed filtering + pagination
+  const viewedCount = listings.filter((l) => viewedIds.has(l.itemId)).length;
+  const visibleListings = hideViewed
+    ? listings.filter((l) => !viewedSnapshot.has(l.itemId))
+    : listings;
+  const totalPages = Math.ceil(visibleListings.length / PAGE_SIZE);
+  const pagedListings = visibleListings.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -414,9 +457,35 @@ export default function WatchSnipePage() {
 
                 {listings.length > 0 && !loading && (
                   <span className="text-xs text-muted-foreground ml-1">
-                    — {listings.length} results
+                    — {visibleListings.length} results
                     {totalPages > 1 && `, page ${page} of ${totalPages}`}
                   </span>
+                )}
+
+                {listings.length > 0 && !loading && viewedCount > 0 && (
+                  <>
+                    <Separator orientation="vertical" className="h-4" />
+                    <button
+                      onClick={handleToggleHideViewed}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border text-xs font-medium transition-colors shrink-0",
+                        hideViewed
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border bg-background hover:bg-muted"
+                      )}
+                      title={hideViewed ? "Show viewed listings" : "Hide listings you've already seen"}
+                    >
+                      {hideViewed ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                      {hideViewed ? "Viewed hidden" : `Hide viewed (${viewedCount})`}
+                    </button>
+                    <button
+                      onClick={handleClearViewed}
+                      className="inline-flex items-center h-7 px-2 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+                      title="Reset viewed status for all listings"
+                    >
+                      Reset
+                    </button>
+                  </>
                 )}
                 {loading && (
                   <span className="text-xs text-muted-foreground ml-1 flex items-center gap-1">
@@ -494,8 +563,10 @@ export default function WatchSnipePage() {
                         key={listing.itemId}
                         listing={listing}
                         isSaved={isItemSaved(listing.itemId)}
+                        isViewed={viewedIds.has(listing.itemId)}
                         onSave={handleSaveItem}
                         onRemove={handleRemoveItem}
+                        onViewed={handleMarkViewed}
                       />
                     ))}
                   </div>
@@ -507,7 +578,7 @@ export default function WatchSnipePage() {
                         variant="outline"
                         size="sm"
                         disabled={page === 1}
-                        onClick={() => { setPage((p) => p - 1); mainRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }}
+                        onClick={() => { setViewedSnapshot(getViewedItems()); setPage((p) => p - 1); mainRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }}
                       >
                         <ChevronLeft className="h-4 w-4 mr-1" />
                         Previous
@@ -519,7 +590,7 @@ export default function WatchSnipePage() {
                         variant="outline"
                         size="sm"
                         disabled={page === totalPages}
-                        onClick={() => { setPage((p) => p + 1); mainRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }}
+                        onClick={() => { setViewedSnapshot(getViewedItems()); setPage((p) => p + 1); mainRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }}
                       >
                         Next
                         <ChevronRight className="h-4 w-4 ml-1" />
