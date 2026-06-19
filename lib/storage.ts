@@ -10,25 +10,66 @@ export interface StoreData {
 
 const EMPTY: StoreData = { savedItems: [], savedSearches: [], viewedItems: [] };
 
-// Loads all server-persisted data in one round trip.
-export async function fetchAllData(): Promise<StoreData> {
+type StoreKey = keyof StoreData;
+
+const LOCAL_KEYS: Record<StoreKey, string> = {
+  savedItems: "watchsnipe_savedItems",
+  savedSearches: "watchsnipe_savedSearches",
+  viewedItems: "watchsnipe_viewedItems",
+};
+
+function readLocal<T>(key: StoreKey, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
   try {
-    const res = await fetch("/api/store");
-    if (!res.ok) return EMPTY;
-    const data = await res.json();
-    return {
-      savedItems: data.savedItems ?? [],
-      savedSearches: data.savedSearches ?? [],
-      viewedItems: data.viewedItems ?? [],
-    };
+    const raw = localStorage.getItem(LOCAL_KEYS[key]);
+    return raw ? (JSON.parse(raw) as T) : fallback;
   } catch {
-    return EMPTY;
+    return fallback;
   }
 }
 
-type StoreKey = keyof StoreData;
+function writeLocal(key: StoreKey, value: unknown): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(LOCAL_KEYS[key], JSON.stringify(value));
+  } catch {
+    // Quota or private-mode failure — server (if configured) stays authoritative.
+  }
+}
+
+// Loads all persisted data. Prefers the server store when configured (cross-device),
+// otherwise falls back to this device's localStorage so data survives a refresh.
+export async function fetchAllData(): Promise<StoreData> {
+  try {
+    const res = await fetch("/api/store");
+    if (res.ok) {
+      const data = await res.json();
+      if (data.configured) {
+        const server: StoreData = {
+          savedItems: data.savedItems ?? [],
+          savedSearches: data.savedSearches ?? [],
+          viewedItems: data.viewedItems ?? [],
+        };
+        // Mirror locally so a later offline refresh still has the latest data.
+        writeLocal("savedItems", server.savedItems);
+        writeLocal("savedSearches", server.savedSearches);
+        writeLocal("viewedItems", server.viewedItems);
+        return server;
+      }
+    }
+  } catch {
+    // Network failure — fall through to local.
+  }
+  return {
+    savedItems: readLocal("savedItems", EMPTY.savedItems),
+    savedSearches: readLocal("savedSearches", EMPTY.savedSearches),
+    viewedItems: readLocal("viewedItems", EMPTY.viewedItems),
+  };
+}
 
 async function persist(key: StoreKey, value: unknown): Promise<void> {
+  // Always persist locally so a refresh works even without a server store.
+  writeLocal(key, value);
   try {
     await fetch("/api/store", {
       method: "PUT",
@@ -36,7 +77,7 @@ async function persist(key: StoreKey, value: unknown): Promise<void> {
       body: JSON.stringify({ key, value }),
     });
   } catch {
-    // Offline or storage unconfigured — local React state stays authoritative.
+    // Offline or storage unconfigured — local copy stays authoritative.
   }
 }
 

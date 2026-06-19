@@ -358,7 +358,7 @@ export default function WatchSnipePage() {
 
       {/* Header */}
       <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur">
-        <div className="max-w-screen-2xl mx-auto px-4 py-3 flex items-center gap-3">
+        <div className="max-w-screen-2xl mx-auto px-4 py-3 flex flex-wrap items-center gap-3">
           <button
             type="button"
             onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
@@ -369,10 +369,10 @@ export default function WatchSnipePage() {
             <span className="font-bold text-lg tracking-tight">WatchSnipe</span>
           </button>
 
-          <Separator orientation="vertical" className="h-6" />
+          <Separator orientation="vertical" className="h-6 hidden sm:flex" />
 
-          {/* Search bar */}
-          <div className="flex-1 flex gap-2">
+          {/* Search bar — own full-width row on mobile, inline on desktop */}
+          <div className="flex gap-2 w-full order-last sm:order-none sm:w-auto sm:flex-1">
             <div className="relative flex-1">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
               <Input
@@ -393,6 +393,8 @@ export default function WatchSnipePage() {
             </Button>
           </div>
 
+          {/* Actions */}
+          <div className="flex items-center gap-2 ml-auto sm:ml-0">
           {/* Save search */}
           <Button
             variant="outline"
@@ -436,6 +438,7 @@ export default function WatchSnipePage() {
               </Badge>
             )}
           </Button>
+          </div>
         </div>
       </header>
 
